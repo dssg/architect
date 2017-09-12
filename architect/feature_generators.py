@@ -122,17 +122,18 @@ class FeatureGenerator(object):
         else:
             return self._compute_choices(categorical['choice_query'])
 
-    def _build_categoricals(self, categorical_config):
+    def _build_categoricals(self, categorical_config, impute_rules):
         return [
             Categorical(
                 col=categorical['column'],
                 choices=self._build_choices(categorical),
-                function=categorical['metrics']
+                function=categorical['metrics'],
+                impute_rules = dict(impute_rules, categorical.get('imputation', {}))
             )
             for categorical in categorical_config
         ]
 
-    def _build_array_categoricals(self, categorical_config):
+    def _build_array_categoricals(self, categorical_config, impute_rules):
         return [
             Compare(
                 col=categorical['column'],
@@ -143,6 +144,7 @@ class FeatureGenerator(object):
                     self._build_choices(categorical)
                 },
                 function=categorical['metrics'],
+                impute_rules = dict(impute_rules, categorical.get('imputation', {}))
                 op_in_name=False,
                 quote_choices=False,
             )
@@ -150,17 +152,31 @@ class FeatureGenerator(object):
         ]
 
     def _aggregation(self, aggregation_config, feature_dates):
+
+        # read top-level imputation rules from the aggregation config; we'll allow
+        # these to be overridden by imputation rules at the individual feature
+        # level as those get parsed as well
+        agimp = aggregation_config.get('aggregates_imputation', {})
+        catimp = aggregation_config.get('categoricals_imputation', {})
+        arrcatimp = aggregation_config.get('array_categoricals_imputation', {})
+
         aggregates = [
-            Aggregate(aggregate['quantity'], aggregate['metrics'])
+                Aggregate(
+                    aggregate['quantity'], 
+                    aggregate['metrics'], 
+                    dict(agimp, aggregate.get('imputation', {}))
+                )
             for aggregate in aggregation_config.get('aggregates', [])
         ]
         logging.info('Found %s quantity aggregates', len(aggregates))
         categoricals = self._build_categoricals(
-            aggregation_config.get('categoricals', [])
+            aggregation_config.get('categoricals', []),
+            catimp
         )
         logging.info('Found %s categorical aggregates', len(categoricals))
         array_categoricals = self._build_array_categoricals(
-            aggregation_config.get('array_categoricals', [])
+            aggregation_config.get('array_categoricals', []),
+            arrcatimp
         )
         logging.info('Found %s array categorical aggregates', len(array_categoricals))
         return SpacetimeAggregation(
