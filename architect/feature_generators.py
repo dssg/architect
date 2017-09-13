@@ -197,6 +197,8 @@ class FeatureGenerator(object):
             intervals=aggregation_config['intervals'],
             groups=aggregation_config['groups'],
             dates=feature_dates,
+            state_table=FIXME,
+            state_group='entity_id', # FIXME?
             date_column=aggregation_config['knowledge_date_column'],
             output_date_column='as_of_date',
             input_min_date=self.beginning_of_time,
