@@ -362,14 +362,23 @@ class FeatureGenerator(object):
             'finalize': [self._aggregation_index_query(aggregation)],
         }
 
-        # TODO:
-        # 1) run query to find columns needing imputation --> aggregation.find_nulls()
-        # 2) determine the imputation type for each column
-        # 3) construct SQL with coalesces and imputed flags --> aggregation.get_impute_create()
-        null_counts = self.db_engine.execute(aggregation.find_nulls()).fetchone()
-        impute_cols = [col for col in null_counts.columns if null_counts[col] > 0] # something like that
+        # excute query to find columns with null values and create lists of columns
+        # that do and do not need imputation when creating the imputation table
+        res = self.db_engine.execute(aggregation.find_nulls())
+        null_counts = list(zip(res.keys(), res.fetchone()))
+        impute_cols = [col for col, val in null_counts if val > 0]
+        nonimpute_cols = [col for col, val in null_counts if val == 0]
+
+        # table tasks for imputed aggregation table, most of the work is done here
+        # by collate's get_impute_create()
         table_tasks[self._clean_table_name(aggregation.get_table_name(imputed=True))] = {
-            'prepare': [aggregation.get_drop(imputed=True), aggregation.get_impute_create(impute_cols=impute_cols)],
+            'prepare': [
+                aggregation.get_drop(imputed=True), 
+                aggregation.get_impute_create(
+                    impute_cols=impute_cols, 
+                    nonimpute_cols=nonimpute_cols
+                    )
+                ],
             'inserts': [],
             'finalize': [self._aggregation_index_query(aggregation, imputed=True)]
         }
