@@ -28,26 +28,6 @@ class BuilderBase(object):
         for matrix_uuid, task_arguments in build_tasks.items():
             self.build_matrix(**task_arguments)
 
-    def _format_imputations(self, feature_names):
-        """ For a list of feature columns, format them for a SQL query, imputing
-        0 for missing values.
-
-        :param feature_names: names of feature columns in a single table
-        :type feature_names: list
-
-        :return: strings to add to feature query to select features and make
-                 imputations
-        :rtype: list
-        """
-        imputations = [
-            """,
-                    CASE
-                        WHEN "{0}" IS NULL THEN 0
-                        ELSE "{0}"
-                    END as "{0}" """.format(feature_name) for feature_name in feature_names
-        ]
-        return(imputations)
-
     def _outer_join_query(
         self,
         right_table_name,
@@ -396,7 +376,7 @@ class CSVBuilder(BuilderBase):
                     schema=self.db_config['features_schema_name'],
                     table=entity_date_table_name
                 ),
-                right_column_selections=self._format_imputations(feature_names)
+                right_column_selections=[', "{}"'.format(fn) for fn in feature_names]
             )
             self.write_to_csv(features_query, csv_name)
             features_csv_names.append(csv_name)
