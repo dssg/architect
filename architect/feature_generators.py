@@ -123,17 +123,24 @@ class FeatureGenerator(object):
             return self._compute_choices(categorical['choice_query'])
 
     def _build_categoricals(self, categorical_config, impute_rules):
+        # TODO: only include null flag where necessary
         return [
             Categorical(
                 col=categorical['column'],
                 choices=self._build_choices(categorical),
                 function=categorical['metrics'],
-                impute_rules = dict(impute_rules, categorical.get('imputation', {}))
+                impute_rules = dict(
+                    impute_rules, 
+                    coltype='categorical', 
+                    **categorical.get('imputation', {})
+                ),
+                include_null=True
             )
             for categorical in categorical_config
         ]
 
     def _build_array_categoricals(self, categorical_config, impute_rules):
+        # TODO: only include null flag where necessary
         return [
             Compare(
                 col=categorical['column'],
@@ -144,9 +151,14 @@ class FeatureGenerator(object):
                     self._build_choices(categorical)
                 },
                 function=categorical['metrics'],
-                impute_rules = dict(impute_rules, categorical.get('imputation', {}))
+                impute_rules = dict(
+                    impute_rules, 
+                    coltype='array_categorical', 
+                    **categorical.get('imputation', {})
+                )
                 op_in_name=False,
                 quote_choices=False,
+                include_null=True
             )
             for categorical in categorical_config
         ]
@@ -164,7 +176,7 @@ class FeatureGenerator(object):
                 Aggregate(
                     aggregate['quantity'], 
                     aggregate['metrics'], 
-                    dict(agimp, aggregate.get('imputation', {}))
+                    dict(agimp, coltype='aggregate', **aggregate.get('imputation', {}))
                 )
             for aggregate in aggregation_config.get('aggregates', [])
         ]
