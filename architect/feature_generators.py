@@ -315,7 +315,7 @@ class FeatureGenerator(object):
             self._aggregation_index_columns(aggregation)
         ) for aggregation in aggregations)
 
-    def _generate_table_tasks_for(self, aggregation):
+    def _generate_table_tasks_for(self, aggregation, drop_preagg=True):
         """Generates SQL commands for preparing, populating, and finalizing
         each feature group table in the given aggregation
 
@@ -371,7 +371,8 @@ class FeatureGenerator(object):
 
         # table tasks for imputed aggregation table, most of the work is done here
         # by collate's get_impute_create()
-        table_tasks[self._clean_table_name(aggregation.get_table_name(imputed=True))] = {
+        imp_tbl_name = self._clean_table_name(aggregation.get_table_name(imputed=True))
+        table_tasks[imp_tbl_name] = {
             'prepare': [
                 aggregation.get_drop(imputed=True), 
                 aggregation.get_impute_create(
@@ -382,5 +383,16 @@ class FeatureGenerator(object):
             'inserts': [],
             'finalize': [self._aggregation_index_query(aggregation, imputed=True)]
         }
+        logging.info('Created table tasks for imputation')
+
+        # do some cleanup:
+        # drop the group-level and aggregation tables, just leaving the
+        # imputation table if drop_preagg=True
+        if drop_preagg:
+            table_tasks[imp_tbl_name]['finalize'] =\
+                table_tasks[imp_tbl_name]['finalize'] +\
+                drops.values() +\
+                [aggregation.get_drop()]
+            logging.info('Added drop table cleanup tasks')
 
         return table_tasks
