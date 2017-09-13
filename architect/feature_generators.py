@@ -287,9 +287,9 @@ class FeatureGenerator(object):
         trans.commit()
 
 
-    def _aggregation_index_query(self, aggregation):
+    def _aggregation_index_query(self, aggregation, imputed=False):
         return 'CREATE INDEX ON {} ({}, {})'.format(
-            aggregation.get_table_name(),
+            aggregation.get_table_name(imputed=imputed),
             self.entity_id_column,
             aggregation.output_date_column
         )
@@ -348,6 +348,18 @@ class FeatureGenerator(object):
             'prepare': [aggregation.get_drop(), aggregation.get_create()],
             'inserts': [],
             'finalize': [self._aggregation_index_query(aggregation)],
+        }
+
+        # TODO:
+        # 1) run query to find columns needing imputation --> aggregation.find_nulls()
+        # 2) determine the imputation type for each column
+        # 3) construct SQL with coalesces and imputed flags --> aggregation.get_impute_create()
+        null_counts = self.db_engine.execute(aggregation.find_nulls()).fetchone()
+        impute_cols = [col for col in null_counts.columns if null_counts[col] > 0] # something like that
+        table_tasks[self._clean_table_name(aggregation.get_table_name(imputed=True))] = {
+            'prepare': [aggregation.get_drop(imputed=True), aggregation.get_impute_create(impute_cols=impute_cols)],
+            'inserts': [],
+            'finalize': [self._aggregation_index_query(aggregation, imputed=True)]
         }
 
         return table_tasks
