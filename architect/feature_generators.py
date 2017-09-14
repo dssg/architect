@@ -287,28 +287,45 @@ class FeatureGenerator(object):
             for aggregation_config in feature_aggregation_config
         ]
 
-    def generate_all_table_tasks(self, aggregations):
+    def generate_all_table_tasks(self, aggregations, task_type):
         """Generates SQL commands for creating, populating, and indexing
         feature group tables
 
         Args:
             aggregations (list) collate.SpacetimeAggregation objects
+            type (str) either 'aggregation' or 'imputation'
 
         Returns: (dict) keys are group table names, values are themselves dicts,
             each with keys for different stages of table creation (prepare, inserts, finalize)
             and with values being lists of SQL commands
         """
+
         logging.debug('---------------------')
-        logging.debug('---------FEATURE GENERATION------------')
+
+        # pick the method to use for generating tasks depending on whether we're
+        # building the aggregations or imputations
+        if task_type=='aggregation':
+            task_generator = self._generate_agg_table_tasks_for
+            logging.debug('---------FEATURE GENERATION------------')
+        elif task_type=='imputation':
+            task_generator = self._generate_imp_table_tasks_for
+            logging.debug('---------FEATURE IMPUTATION------------')
+        else:
+            raise ValueError('Table task type must be aggregation or imputation')
+
         logging.debug('---------------------')
+
         table_tasks = OrderedDict()
         for aggregation in aggregations:
-            table_tasks.update(self._generate_table_tasks_for(aggregation))
+            table_tasks.update(task_generator(aggregation))
         logging.info('Created %s tables', len(table_tasks.keys()))
         return table_tasks
 
     def create_all_tables(self, feature_aggregation_config, feature_dates):
-        """Creates all feature tables.
+        """Creates all feature tables, first building the aggregation tables
+        and then performing imputation on any null values (requires a two-
+        step process to determine which columns contain nulls after the
+        initial aggregation tables are built)
 
         Args:
             feature_aggregation_config (list) all values, except for feature
@@ -317,14 +334,29 @@ class FeatureGenerator(object):
 
         Returns: (list) table names
         """
-        table_tasks = self.generate_all_table_tasks(
+
+        # first, generate and run table tasks for aggregations
+        table_tasks_aggregate = self.generate_all_table_tasks(
             self.aggregations(
                 feature_aggregation_config,
-                feature_dates
+                feature_dates,
+                task_type='aggregation'
             )
         )
+        aggregate_keys = self.process_table_tasks(table_tasks_aggregate)
 
-        return self.process_table_tasks(table_tasks)
+        # second, perform the imputations (this will query the tables
+        # constructed above to identify features containing nulls)
+        table_tasks_impute = self.generate_all_table_tasks(
+            self.aggregations(
+                feature_aggregation_config,
+                feature_dates,
+                task_type='imputation'
+            )
+        )
+        impute_keys = self.process_table_tasks(table_tasks_impute)
+
+        return aggregate_keys+impute_keys
 
     def process_table_tasks(self, table_tasks):
         for table_name, task in table_tasks.items():
@@ -383,7 +415,7 @@ class FeatureGenerator(object):
             self._aggregation_index_columns(aggregation)
         ) for aggregation in aggregations)
 
-    def _generate_table_tasks_for(self, aggregation, drop_preagg=True):
+    def _generate_agg_table_tasks_for(self, aggregation):
         """Generates SQL commands for preparing, populating, and finalizing
         each feature group table in the given aggregation
 
@@ -429,6 +461,29 @@ class FeatureGenerator(object):
             'inserts': [],
             'finalize': [self._aggregation_index_query(aggregation)],
         }
+
+        return table_tasks
+
+    def _generate_imp_table_tasks_for(self, aggregation, drop_preagg=True):
+        """Generates SQL commands for preparing, populating, and finalizing
+        imputations for each feature group table in the given aggregation
+
+        Requires the existance of the underlying feature and aggregation
+        tables defined in _generate_agg_table_tasks_for()
+
+        Args:
+            aggregation (collate.SpacetimeAggregation)
+            drop_preagg: boolean to specify dropping pre-imputation tables
+
+        Returns: (dict) of structure {
+            'prepare': list of commands to prepare table for population
+            'inserts': list of commands to populate table
+            'finalize': list of commands to finalize table after population
+        }
+        """
+        drops = aggregation.get_drops()
+
+        table_tasks = OrderedDict()
 
         # excute query to find columns with null values and create lists of columns
         # that do and do not need imputation when creating the imputation table
