@@ -83,6 +83,71 @@ class FeatureGenerator(object):
         if 'entity_id' not in groups:
             raise ValueError('One of the aggregation groups is required to be entity_id')
 
+    def _validate_imputation_rule(self, aggregate_type, impute_rule):
+        """Validate the imputation rule for a given aggregation type
+        """
+
+        # dictionary of imputation type : required parameters
+        valid_imputations = {
+            'all': {
+                'mean': [],
+                'constant': ['value'],
+                'zero': [],
+                'error': []
+            },
+            'aggregates': {
+                'binary_mode': [],
+            },
+            'categoricals': {
+                'null_category': []
+            }
+        }
+        valid_imputations['array_categoricals'] = valid_imputations['categoricals']
+
+        # the valid imputation rules for the specific aggregation type being checked
+        valid_types = dict(valid_imputations['all'], **valid_imputations[aggregate_type])
+
+        # no imputation rule was specified
+        if 'type' not in impute_rule.keys():
+            raise ValueError('Imputation type must be specified')
+        
+        # a rule was specified, but not valid for this type of aggregate
+        if impute_rule['type'] not in valid_types.keys():
+            raise ValueError('Invalid imputation type %s for %s'\
+                 % (impute_rule['type'], aggregate_type))
+
+        # check that all required parameters exist in the keys of the imputation rule
+        required_params = valid_types[impute_rule['type']]
+        for param in required_params:
+            if param not in impute_rule.keys():
+                raise ValueError('Missing param %s for %s' % (param, impute_rule['type']))
+
+    def _validate_imputations(self, aggregation_config):
+        """Validate the imputation rules in an aggregation config, looping
+        through all three types of aggregates. Most of the work here is
+        done by _validate_imputation_rule() to check the requirements of
+        each imputation rule found
+        """
+        agg_types = ['aggregates', 'categoricals', 'array_categoricals']
+
+        for agg_type in agg_types:
+            # base_imp are the top-level rules, `such as aggregates_imputation`
+            base_imp = aggregation_config.get(agg_type+'_imputation', {})
+
+            # loop through the individual aggregates
+            for agg in aggregation_config.get(agg_type, []):
+                # combine any aggregate-level imputation rules with top-level ones
+                imp_dict = dict(base_imp, **agg.get('imputation', {}))
+
+                # imputation rules are metric-specific, so check each metric's rule
+                for metric in agg['metrics']:
+                    # metric rules may be defined by the metric name (e.g., 'max')
+                    # or with the 'all' catch-all, with named metrics taking
+                    # precedence. If we fall back to {}, the rule validator will
+                    # error out on no metric found.
+                    impute_rule = imp_dict.get(metric, imp_dict.get('all', {}))
+                    self._validate_imputation_rule(agg_type, impute_rule)
+
     def _validate_aggregation(self, aggregation_config):
         logging.info('Validating aggregation config %s', aggregation_config)
         self._validate_keys(aggregation_config)
@@ -91,6 +156,7 @@ class FeatureGenerator(object):
         self._validate_from_obj(aggregation_config['from_obj'])
         self._validate_time_intervals(aggregation_config['intervals'])
         self._validate_groups(aggregation_config['groups'])
+        self._validate_imputations(aggregation_config)
 
     def validate(self, feature_aggregation_config):
         """Validate a feature aggregation config applied to this object
@@ -155,7 +221,7 @@ class FeatureGenerator(object):
                     impute_rules, 
                     coltype='array_categorical', 
                     **categorical.get('imputation', {})
-                )
+                ),
                 op_in_name=False,
                 quote_choices=False,
                 include_null=True
