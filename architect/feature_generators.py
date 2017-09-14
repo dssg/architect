@@ -311,9 +311,9 @@ class FeatureGenerator(object):
     def _aggregation_index_columns(self, aggregation):
         return sorted([group for group in aggregation.groups.keys()] + [aggregation.output_date_column])
 
-    def index_column_lookup(self, aggregations):
+    def index_column_lookup(self, aggregations, imputed=True):
         return dict((
-            self._clean_table_name(aggregation.get_table_name()),
+            self._clean_table_name(aggregation.get_table_name(imputed=imputed)),
             self._aggregation_index_columns(aggregation)
         ) for aggregation in aggregations)
 
