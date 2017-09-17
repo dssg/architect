@@ -4,6 +4,7 @@ import pandas
 from metta import metta_io as metta
 import os
 import csv
+from sqlalchemy.exc import DataError
 
 
 class BuilderBase(object):
@@ -376,9 +377,19 @@ class CSVBuilder(BuilderBase):
                     schema=self.db_config['features_schema_name'],
                     table=entity_date_table_name
                 ),
-                right_column_selections=[', "{}"'.format(fn) for fn in feature_names]
+                # collate imputation shouldn't leave any nulls and we double-check
+                # the imputed table in FeatureGenerator.create_all_tables() but as
+                # a final check, raise a divide by zero error on export if the
+                # database encounters any during the outer join
+                right_column_selections=[', COALESCE("{0}", 1/0) AS "{0}"'.format(fn) for fn in feature_names]
             )
-            self.write_to_csv(features_query, csv_name)
+            try:
+                self.write_to_csv(features_query, csv_name)
+            except DataError as err:
+                if 'division by zero' in str(err):
+                    raise ValueError("Imputation failed for %s" % feature_table_name)
+                else:
+                    raise err
             features_csv_names.append(csv_name)
 
         return(features_csv_names)

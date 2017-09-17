@@ -335,26 +335,38 @@ class FeatureGenerator(object):
         Returns: (list) table names
         """
 
+        aggs = self.aggregations(
+                    feature_aggregation_config,
+                    feature_dates
+                )
+
         # first, generate and run table tasks for aggregations
         table_tasks_aggregate = self.generate_all_table_tasks(
-            self.aggregations(
-                feature_aggregation_config,
-                feature_dates,
-                task_type='aggregation'
-            )
+            aggs,
+            task_type='aggregation'
         )
         aggregate_keys = self.process_table_tasks(table_tasks_aggregate)
 
         # second, perform the imputations (this will query the tables
         # constructed above to identify features containing nulls)
         table_tasks_impute = self.generate_all_table_tasks(
-            self.aggregations(
-                feature_aggregation_config,
-                feature_dates,
-                task_type='imputation'
-            )
+            aggs,
+            task_type='imputation'
         )
         impute_keys = self.process_table_tasks(table_tasks_impute)
+
+        # double-check that the imputation worked and no nulls remain
+        # in the data:
+        nullcols = []
+        for agg in aggs:
+            res = self.db_engine.execute(agg.find_nulls(imputed=True))
+            null_counts = list(zip(res.keys(), res.fetchone()))
+            nullcols += [col for col, val in null_counts if val > 0]
+        if len(nullcols) > 0:
+            raise ValueError(
+                "Imputation failed for {0} columns. Null values remain in: {1}"\
+                .format(len(nullcols), nullcols)
+                )
 
         return aggregate_keys+impute_keys
 
