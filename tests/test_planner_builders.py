@@ -50,7 +50,7 @@ states = [
     [5, '2016-05-01', False, False]
 ]
 
-features0 = [
+features0_pre = [
     [0, '2016-01-01', 2, 0],
     [1, '2016-01-01', 1, 2],
     [0, '2016-02-01', 2, 3],
@@ -61,7 +61,7 @@ features0 = [
     [1, '2016-05-01', 5, 4]
 ] 
 
-features1 = [
+features1_pre = [
     [2, '2016-01-01', 1, 1],
     [3, '2016-01-01', 1, 2],
     [2, '2016-02-01', 2, 3],
@@ -75,6 +75,21 @@ features1 = [
     [4, '2016-03-01', 1, 4],
     [5, '2016-03-01', 2, 4]
 ] 
+
+# collate will ensure every entity/date combination in the state
+# table have an imputed value in the features table, so ensure
+# this is true for our test (filling with 9's):
+f0_dict = {(r[0], r[1]) : r for r in features0_pre}
+f1_dict = {(r[0], r[1]) : r for r in features1_pre}
+
+for rec in states:
+    ent_dt = (rec[0], rec[1])
+    f0_dict[ent_dt] = f0_dict.get(ent_dt, list(ent_dt + (9, 9)))
+    f1_dict[ent_dt] = f1_dict.get(ent_dt, list(ent_dt + (9, 9)))
+
+features0 = sorted(f0_dict.values(), key=lambda x: (x[1], x[0]))
+features1 = sorted(f1_dict.values(), key=lambda x: (x[1], x[0]))
+
 
 features_tables = [features0, features1]
 
@@ -402,7 +417,6 @@ def test_write_features_data():
 
             # get the queries and test them
             for feature_csv_name, df in zip(sorted(features_csv_names), features_dfs):
-                df = df.fillna(0)
                 df = df.reset_index()
 
                 result = pd.read_csv(feature_csv_name).reset_index()
