@@ -229,7 +229,7 @@ class FeatureGenerator(object):
             for categorical in categorical_config
         ]
 
-    def _aggregation(self, aggregation_config, feature_dates):
+    def _aggregation(self, aggregation_config, feature_dates, state_table):
 
         # read top-level imputation rules from the aggregation config; we'll allow
         # these to be overridden by imputation rules at the individual feature
@@ -263,8 +263,8 @@ class FeatureGenerator(object):
             intervals=aggregation_config['intervals'],
             groups=aggregation_config['groups'],
             dates=feature_dates,
-            state_table=FIXME,
-            state_group='entity_id', # FIXME?
+            state_table=state_table,
+            state_group=self.entity_id_column
             date_column=aggregation_config['knowledge_date_column'],
             output_date_column='as_of_date',
             input_min_date=self.beginning_of_time,
@@ -272,18 +272,19 @@ class FeatureGenerator(object):
             prefix=aggregation_config['prefix']
         )
 
-    def aggregations(self, feature_aggregation_config, feature_dates):
+    def aggregations(self, feature_aggregation_config, feature_dates, state_table):
         """Creates collate.SpacetimeAggregations from the given arguments
 
         Args:
             feature_aggregation_config (list) all values, except for feature
                 date, necessary to instantiate a collate.SpacetimeAggregation
             feature_dates (list) dates to generate features as of
+            state_table (string) schema.table_name for state table with all entity/date pairs
 
         Returns: (list) collate.SpacetimeAggregations
         """
         return [
-            self._aggregation(aggregation_config, feature_dates)
+            self._aggregation(aggregation_config, feature_dates, state_table)
             for aggregation_config in feature_aggregation_config
         ]
 
@@ -368,7 +369,7 @@ class FeatureGenerator(object):
                 .format(len(nullcols), nullcols)
                 )
 
-        return aggregate_keys+impute_keys
+        return impute_keys
 
     def process_table_tasks(self, table_tasks):
         for table_name, task in table_tasks.items():
@@ -454,7 +455,14 @@ class FeatureGenerator(object):
             group_table = self._clean_table_name(
                 aggregation.get_table_name(group=group)
             )
-            if self.replace or not self._table_exists(group_table):
+            imputed_table = self._clean_table_name(
+                aggregation.get_table_name(imputed=True)
+            )
+            if self.replace or (
+                not self._table_exists(group_table) 
+                and 
+                not self._table_exists(imputed_table)
+                ):
                 table_tasks[group_table] = {
                     'prepare': [drops[group], creates[group]],
                     'inserts': inserts[group],
@@ -497,6 +505,17 @@ class FeatureGenerator(object):
 
         table_tasks = OrderedDict()
 
+        imp_tbl_name = self._clean_table_name(
+            aggregation.get_table_name(imputed=True)
+        )
+        if (not self.replace) and self._table_exists(imp_tbl_name):
+            logging.info(
+                'Skipping imputation table creation for %s',
+                imp_tbl_name
+            )
+            table_tasks[imp_tbl_name] = {}
+            return table_tasks
+
         # excute query to find columns with null values and create lists of columns
         # that do and do not need imputation when creating the imputation table
         res = self.db_engine.execute(aggregation.find_nulls())
@@ -506,7 +525,6 @@ class FeatureGenerator(object):
 
         # table tasks for imputed aggregation table, most of the work is done here
         # by collate's get_impute_create()
-        imp_tbl_name = self._clean_table_name(aggregation.get_table_name(imputed=True))
         table_tasks[imp_tbl_name] = {
             'prepare': [
                 aggregation.get_drop(imputed=True), 
@@ -518,7 +536,7 @@ class FeatureGenerator(object):
             'inserts': [],
             'finalize': [self._aggregation_index_query(aggregation, imputed=True)]
         }
-        logging.info('Created table tasks for imputation')
+        logging.info('Created table tasks for imputation: %s' % imp_tbl_name)
 
         # do some cleanup:
         # drop the group-level and aggregation tables, just leaving the
@@ -528,6 +546,6 @@ class FeatureGenerator(object):
                 table_tasks[imp_tbl_name]['finalize'] +\
                 drops.values() +\
                 [aggregation.get_drop()]
-            logging.info('Added drop table cleanup tasks')
+            logging.info('Added drop table cleanup tasks: %s' % imp_tbl_name)
 
         return table_tasks
