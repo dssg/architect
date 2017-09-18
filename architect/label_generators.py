@@ -33,7 +33,7 @@ class BinaryLabelGenerator(object):
             from {events_table}
             where '{start_date}' <= outcome_date
             and outcome_date < '{start_date}'::timestamp + interval '{label_window}'
-            group by 1, 2, 3, 4, 5
+            group by entity_id,as_of_date,label_window,label_name,label_type;
         )""".format(
             events_table=self.events_table,
             labels_table=labels_table,
