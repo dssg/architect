@@ -264,7 +264,7 @@ class FeatureGenerator(object):
             groups=aggregation_config['groups'],
             dates=feature_dates,
             state_table=state_table,
-            state_group=self.entity_id_column
+            state_group=self.entity_id_column,
             date_column=aggregation_config['knowledge_date_column'],
             output_date_column='as_of_date',
             input_min_date=self.beginning_of_time,

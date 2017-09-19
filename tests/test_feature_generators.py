@@ -180,7 +180,7 @@ def test_feature_generation():
         ).create_all_tables(
             feature_dates=['2013-09-30', '2014-09-30'],
             feature_aggregation_config=aggregate_config,
-            state_table=states,
+            state_table='states',
         )
 
         for output_table in output_tables:
