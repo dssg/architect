@@ -691,7 +691,8 @@ def test_replace():
             state_table='states'
         )
 
-        assert len(feature_tables) == 2
+        assert len(feature_tables) == 1
+        assert list(feature_tables)[0] == 'aprefix_aggregation_imputed'
 
         feature_generator = FeatureGenerator(
             db_engine=engine,
@@ -710,6 +711,8 @@ def test_replace():
         imp_tasks = feature_generator.generate_all_table_tasks(aggregations, task_type='imputation')
 
         assert len(imp_tasks['aprefix_aggregation_imputed'].keys()) == 0
+
+        engine.dispose()
 
 
 class TestValidations(TestCase):

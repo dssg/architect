@@ -51,12 +51,15 @@ class FeatureGenerator(object):
 
     def _validate_categoricals(self, categoricals):
         conn = self.db_engine.connect()
+        trans = conn.begin()
         for categorical in categoricals:
             if 'choice_query' in categorical:
                 logging.info('Validating choice query')
                 try:
                     conn.execute('explain {}'.format(categorical['choice_query']))
+                    trans.commit()
                 except Exception as e:
+                    trans.rollback()
                     raise ValueError(
                         'choice query does not run. \nchoice query: "{}"\nFull error: {}'
                         .format(categorical['choice_query'], e)
@@ -64,10 +67,13 @@ class FeatureGenerator(object):
 
     def _validate_from_obj(self, from_obj):
         conn = self.db_engine.connect()
+        trans = conn.begin()
         logging.info('Validating from_obj')
         try:
             conn.execute('explain select * from {}'.format(from_obj))
+            trans.commit()
         except Exception as e:
+            trans.rollback()
             raise ValueError(
                 'from_obj query does not run. \nfrom_obj: "{}"\nFull error: {}'
                 .format(from_obj, e)
@@ -175,11 +181,14 @@ class FeatureGenerator(object):
 
     def _compute_choices(self, choice_query):
         if choice_query not in self.categorical_cache:
+            conn = self.db_engine.connect()
+            trans = conn.begin()
             self.categorical_cache[choice_query] = [
                 row[0]
                 for row
-                in self.db_engine.execute(choice_query)
+                in conn.execute(choice_query)
             ]
+            trans.commit()
         return self.categorical_cache[choice_query]
 
     def _build_choices(self, categorical):
@@ -362,9 +371,13 @@ class FeatureGenerator(object):
         # in the data:
         nullcols = []
         for agg in aggs:
-            res = self.db_engine.execute(agg.find_nulls(imputed=True))
+            conn = self.db_engine.connect()
+            trans = conn.begin()
+            res = conn.execute(agg.find_nulls(imputed=True))
             null_counts = list(zip(res.keys(), res.fetchone()))
             nullcols += [col for col, val in null_counts if val > 0]
+            res.close()
+            trans.commit()
         if len(nullcols) > 0:
             raise ValueError(
                 "Imputation failed for {0} columns. Null values remain in: {1}"\
@@ -383,12 +396,14 @@ class FeatureGenerator(object):
 
     def _explain_selects(self, aggregations):
         conn = self.db_engine.connect()
+        trans = conn.begin()
         for aggregation in aggregations:
             for selectlist in aggregation.get_selects().values():
                 for select in selectlist:
                     result = [row for row in conn.execute('explain ' + str(select))]
                     logging.debug(str(select))
                     logging.debug(result)
+        trans.commit()
 
     def _clean_table_name(self, table_name):
         # remove the schema and quotes from the name
@@ -396,14 +411,18 @@ class FeatureGenerator(object):
 
     def _table_exists(self, table_name):
         try:
-            self.db_engine.execute(
+            conn = self.db_engine.connect()
+            trans = conn.begin()
+            res = conn.execute(
                 'select * from {}.{} limit 1'.format(
                     self.features_schema_name,
                     table_name
                 )
-            )
+            ).fetchall()
+            trans.commit()
             return True
         except sqlalchemy.exc.ProgrammingError:
+            trans.rollback()
             return False
 
     def run_commands(self, command_list):
@@ -450,7 +469,10 @@ class FeatureGenerator(object):
         inserts = aggregation.get_inserts()
 
         if create_schema is not None:
-            self.db_engine.execute(create_schema)
+            conn = self.db_engine.connect()
+            trans = conn.begin()
+            conn.execute(create_schema)
+            trans.commit()
 
         table_tasks = OrderedDict()
         for group in aggregation.groups:
@@ -531,10 +553,14 @@ class FeatureGenerator(object):
 
         # excute query to find columns with null values and create lists of columns
         # that do and do not need imputation when creating the imputation table
-        res = self.db_engine.execute(aggregation.find_nulls())
+        conn = self.db_engine.connect()
+        trans = conn.begin()
+        res = conn.execute(aggregation.find_nulls())
         null_counts = list(zip(res.keys(), res.fetchone()))
         impute_cols = [col for col, val in null_counts if val > 0]
         nonimpute_cols = [col for col, val in null_counts if val == 0]
+        res.close()
+        trans.commit()
 
         # table tasks for imputed aggregation table, most of the work is done here
         # by collate's get_impute_create()
