@@ -94,7 +94,7 @@ def test_feature_generation():
             {
                 'entity_id': 1,
                 'as_of_date': date(2013, 9, 30),
-                'zip_code': '60120',
+                'zip_code': None,
                 'aprefix_entity_id_all_quantity_one_sum': 137,
                 'aprefix_entity_id_all_quantity_one_count': 0,
                 'aprefix_entity_id_all_cat_one_good_sum': 0,
@@ -104,7 +104,11 @@ def test_feature_generation():
                 'aprefix_zip_code_all_quantity_one_count': 0,
                 'aprefix_zip_code_all_cat_one_good_sum': 0,
                 'aprefix_zip_code_all_cat_one_bad_sum': 0,
-                'aprefix_zip_code_all_cat_one__NULL_sum': 1
+                'aprefix_zip_code_all_cat_one__NULL_sum': 1,
+                'aprefix_entity_id_all_quantity_one_sum_imp': 1,
+                'aprefix_entity_id_all_quantity_one_count_imp': 1,
+                'aprefix_zip_code_all_quantity_one_sum_imp': 1,
+                'aprefix_zip_code_all_quantity_one_count_imp': 1
             },
             {
                 'entity_id': 1,
@@ -119,7 +123,11 @@ def test_feature_generation():
                 'aprefix_zip_code_all_quantity_one_count': 1,
                 'aprefix_zip_code_all_cat_one_good_sum': 1,
                 'aprefix_zip_code_all_cat_one_bad_sum': 0,
-                'aprefix_zip_code_all_cat_one__NULL_sum': 0
+                'aprefix_zip_code_all_cat_one__NULL_sum': 0,
+                'aprefix_entity_id_all_quantity_one_sum_imp': 0,
+                'aprefix_entity_id_all_quantity_one_count_imp': 0,
+                'aprefix_zip_code_all_quantity_one_sum_imp': 0,
+                'aprefix_zip_code_all_quantity_one_count_imp': 0
             },
             {
                 'entity_id': 3,
@@ -134,7 +142,11 @@ def test_feature_generation():
                 'aprefix_zip_code_all_quantity_one_count': 1,
                 'aprefix_zip_code_all_cat_one_good_sum': 0,
                 'aprefix_zip_code_all_cat_one_bad_sum': 1,
-                'aprefix_zip_code_all_cat_one__NULL_sum': 0
+                'aprefix_zip_code_all_cat_one__NULL_sum': 0,
+                'aprefix_entity_id_all_quantity_one_sum_imp': 0,
+                'aprefix_entity_id_all_quantity_one_count_imp': 0,
+                'aprefix_zip_code_all_quantity_one_sum_imp': 0,
+                'aprefix_zip_code_all_quantity_one_count_imp': 0
             },
             {
                 'entity_id': 3,
@@ -149,7 +161,11 @@ def test_feature_generation():
                 'aprefix_zip_code_all_quantity_one_count': 2,
                 'aprefix_zip_code_all_cat_one_good_sum': 0,
                 'aprefix_zip_code_all_cat_one_bad_sum': 2,
-                'aprefix_zip_code_all_cat_one__NULL_sum': 0
+                'aprefix_zip_code_all_cat_one__NULL_sum': 0,
+                'aprefix_entity_id_all_quantity_one_sum_imp': 0,
+                'aprefix_entity_id_all_quantity_one_count_imp': 0,
+                'aprefix_zip_code_all_quantity_one_sum_imp': 0,
+                'aprefix_zip_code_all_quantity_one_count_imp': 0
             },
             {
                 'entity_id': 4,
@@ -164,7 +180,11 @@ def test_feature_generation():
                 'aprefix_zip_code_all_quantity_one_count': 2,
                 'aprefix_zip_code_all_cat_one_good_sum': 0,
                 'aprefix_zip_code_all_cat_one_bad_sum': 2,
-                'aprefix_zip_code_all_cat_one__NULL_sum': 0
+                'aprefix_zip_code_all_cat_one__NULL_sum': 0,
+                'aprefix_entity_id_all_quantity_one_sum_imp': 0,
+                'aprefix_entity_id_all_quantity_one_count_imp': 0,
+                'aprefix_zip_code_all_quantity_one_sum_imp': 0,
+                'aprefix_zip_code_all_quantity_one_count_imp': 0
             },
         ]
     }
@@ -185,7 +205,7 @@ def test_feature_generation():
 
         for output_table in output_tables:
             records = pandas.read_sql(
-                'select * from {}.{} order by 1, 2'
+                'select * from {}.{} order by entity_id, as_of_date'
                 .format(features_schema_name, output_table),
                 engine
             ).to_dict('records')
@@ -197,7 +217,15 @@ def test_index_column_lookup():
     aggregations = [
         SpacetimeAggregation(
             prefix='prefix1',
-            aggregates=[Categorical(col='cat_one', function='sum', choices=['good', 'bad', 'inbetween'])],
+            aggregates=[Categorical(
+                col='cat_one', 
+                function='sum', 
+                choices=['good', 'bad', 'inbetween'],
+                impute_rules={
+                        'coltype': 'categorical',
+                        'all': {'type': 'zero'}
+                    }
+            )],
             groups=['entity_id'],
             intervals=['all'],
             date_column='knowledge_date',
@@ -210,7 +238,14 @@ def test_index_column_lookup():
         ),
         SpacetimeAggregation(
             prefix='prefix2',
-            aggregates=[Aggregate(quantity='quantity_one', function='count')],
+            aggregates=[Aggregate(
+                quantity='quantity_one', 
+                function='count',
+                impute_rules={
+                    'coltype': 'aggregate',
+                    'all': {'type': 'zero'}
+                }
+            )],
             groups=['entity_id', 'zip_code'],
             intervals=['all'],
             date_column='knowledge_date',
@@ -467,6 +502,18 @@ def test_array_categoricals():
                 row
             )
 
+        engine.execute("""
+            create table states (
+                entity_id int,
+                as_of_date date
+            )
+        """)
+        for row in INPUT_STATES:
+            engine.execute(
+                'insert into states values (%s, %s)',
+                row
+            )
+
         features_schema_name = 'features'
 
         output_tables = FeatureGenerator(
@@ -492,7 +539,15 @@ def test_generate_table_tasks():
     aggregations = [
         SpacetimeAggregation(
             prefix='prefix1',
-            aggregates=[Categorical(col='cat_one', function='sum', choices=['good', 'bad', 'inbetween'])],
+            aggregates=[Categorical(
+                col='cat_one', 
+                function='sum', 
+                choices=['good', 'bad', 'inbetween'],
+                impute_rules={
+                        'coltype': 'categorical',
+                        'all': {'type': 'zero'}
+                    }
+            )],
             groups=['entity_id'],
             intervals=['all'],
             date_column='knowledge_date',
@@ -505,7 +560,14 @@ def test_generate_table_tasks():
         ),
         SpacetimeAggregation(
             prefix='prefix2',
-            aggregates=[Aggregate(quantity='quantity_one', function='count')],
+            aggregates=[Aggregate(
+                quantity='quantity_one', 
+                function='count',
+                impute_rules={
+                    'coltype': 'aggregate',
+                    'all': {'type': 'zero'}
+                }
+            )],
             groups=['entity_id'],
             intervals=['all'],
             date_column='knowledge_date',
@@ -532,6 +594,12 @@ def test_generate_table_tasks():
             assert 'CREATE TABLE' in str(task['prepare'][1])
             assert 'CREATE INDEX' in task['finalize'][0]
             assert isinstance(task['inserts'], list)
+
+        # build the aggregation tables to check the imputation tasks
+        FeatureGenerator(
+            db_engine=engine,
+            features_schema_name=features_schema_name
+        ).process_table_tasks(table_tasks)
 
         table_tasks = FeatureGenerator(
             db_engine=engine,
@@ -582,6 +650,7 @@ def test_aggregations():
         ).aggregations(
             feature_dates=['2013-09-30', '2014-09-30'],
             feature_aggregation_config=aggregate_config,
+            state_table='states'
         )
         for aggregation in aggregations:
             assert isinstance(aggregation, SpacetimeAggregation)
@@ -634,7 +703,7 @@ def test_replace():
             feature_aggregation_config=aggregate_config,
             state_table='states'
         )
-        table_tasks = feature_generator.generate_all_table_tasks(aggregations, task_type='aggregations')
+        table_tasks = feature_generator.generate_all_table_tasks(aggregations, task_type='aggregation')
 
         assert len(table_tasks['aprefix_entity_id'].keys()) == 0
 
@@ -699,7 +768,7 @@ class TestValidations(TestCase):
 
         with self.assertRaises(ValueError):
             no_imps = copy.deepcopy(self.base_config)
-            del no_imps['categoricals']['imputation']
+            del no_imps['categoricals'][0]['imputation']
             self.feature_generator.validate([no_imps])
 
     def test_bad_from_obj(self):
@@ -729,26 +798,26 @@ class TestValidations(TestCase):
 
     def test_wrong_imp_fcn(self):
         wrong_imp_fcn = copy.deepcopy(self.base_config)
-        del wrong_imp_fcn['categoricals']['imputation']['all']
-        wrong_imp_fcn['categoricals']['imputation']['max'] = {'type': 'null_category'}
+        del wrong_imp_fcn['categoricals'][0]['imputation']['all']
+        wrong_imp_fcn['categoricals'][0]['imputation']['max'] = {'type': 'null_category'}
         with self.assertRaises(ValueError):
             self.feature_generator.validate([wrong_imp_fcn])
 
     def test_bad_imp_rule(self):
         bad_imp_rule = copy.deepcopy(self.base_config)
-        bad_imp_rule['categoricals']['imputation']['all'] = {'type': 'bad_rule_doesnt_exist'}
+        bad_imp_rule['categoricals'][0]['imputation']['all'] = {'type': 'bad_rule_doesnt_exist'}
         with self.assertRaises(ValueError):
             self.feature_generator.validate([bad_imp_rule])
 
     def test_no_imp_rule_type(self):
         no_imp_rule_type = copy.deepcopy(self.base_config)
-        no_imp_rule_type['categoricals']['imputation']['all'] = {'value': 'good'}
+        no_imp_rule_type['categoricals'][0]['imputation']['all'] = {'value': 'good'}
         with self.assertRaises(ValueError):
             self.feature_generator.validate([no_imp_rule_type])
 
     def test_missing_imp_arg(self):
         missing_imp_arg = copy.deepcopy(self.base_config)
         # constant value imputation requires a 'value' parameter
-        missing_imp_arg['categoricals']['imputation']['all'] = {'type': 'constant'}
+        missing_imp_arg['categoricals'][0]['imputation']['all'] = {'type': 'constant'}
         with self.assertRaises(ValueError):
             self.feature_generator.validate([missing_imp_arg])

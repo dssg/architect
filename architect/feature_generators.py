@@ -322,7 +322,7 @@ class FeatureGenerator(object):
         logging.info('Created %s tables', len(table_tasks.keys()))
         return table_tasks
 
-    def create_all_tables(self, feature_aggregation_config, feature_dates):
+    def create_all_tables(self, feature_aggregation_config, feature_dates, state_table):
         """Creates all feature tables, first building the aggregation tables
         and then performing imputation on any null values (requires a two-
         step process to determine which columns contain nulls after the
@@ -332,13 +332,15 @@ class FeatureGenerator(object):
             feature_aggregation_config (list) all values, except for feature
                 date, necessary to instantiate a collate.SpacetimeAggregation
             feature_dates (list) dates to generate features as of
+            state_table (string) schema.table_name for state table with all entity/date pairs
 
         Returns: (list) table names
         """
 
         aggs = self.aggregations(
                     feature_aggregation_config,
-                    feature_dates
+                    feature_dates,
+                    state_table
                 )
 
         # first, generate and run table tasks for aggregations
@@ -476,11 +478,22 @@ class FeatureGenerator(object):
                 )
                 table_tasks[group_table] = {}
         logging.info('Created table tasks for aggregation')
-        table_tasks[self._clean_table_name(aggregation.get_table_name())] = {
-            'prepare': [aggregation.get_drop(), aggregation.get_create()],
-            'inserts': [],
-            'finalize': [self._aggregation_index_query(aggregation)],
-        }
+        if self.replace or (
+            not self._table_exists(
+                self._clean_table_name(aggregation.get_table_name())
+                )
+            and
+            not self._table_exists(
+                self._clean_table_name(aggregation.get_table_name(imputed=True))
+                )
+            ):
+            table_tasks[self._clean_table_name(aggregation.get_table_name())] = {
+                'prepare': [aggregation.get_drop(), aggregation.get_create()],
+                'inserts': [],
+                'finalize': [self._aggregation_index_query(aggregation)],
+            }
+        else:
+            table_tasks[self._clean_table_name(aggregation.get_table_name())] = {}
 
         return table_tasks
 
@@ -544,7 +557,7 @@ class FeatureGenerator(object):
         if drop_preagg:
             table_tasks[imp_tbl_name]['finalize'] =\
                 table_tasks[imp_tbl_name]['finalize'] +\
-                drops.values() +\
+                list(drops.values()) +\
                 [aggregation.get_drop()]
             logging.info('Added drop table cleanup tasks: %s' % imp_tbl_name)
 
