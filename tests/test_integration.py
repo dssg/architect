@@ -311,6 +311,7 @@ def basic_integration_test(
                     'groups': ['entity_id']
                 }],
                 feature_dates=all_as_of_times,
+                state_table=state_table_generator.sparse_table_name
             )
             feature_table_agg_tasks = feature_generator.generate_all_table_tasks(aggregations, task_type='aggregation')
 
@@ -325,7 +326,7 @@ def basic_integration_test(
             # build feature dictionaries from feature tables and
             # subsetting config
             master_feature_dict = feature_dictionary_creator.feature_dictionary(
-                feature_table_names=feature_table_tasks.keys(),
+                feature_table_names=feature_table_imp_tasks.keys(),
                 index_column_lookup=feature_generator.index_column_lookup(aggregations)
             )
 
