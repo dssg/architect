@@ -99,6 +99,7 @@ class FeatureGenerator(object):
                 'mean': [],
                 'constant': ['value'],
                 'zero': [],
+                'zero_noflag': [],
                 'error': []
             },
             'aggregates': {
