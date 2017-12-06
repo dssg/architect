@@ -6,6 +6,10 @@ Plan, design, and build train and test matrices
 [![codecov](https://codecov.io/gh/dssg/architect/branch/master/graph/badge.svg)](https://codecov.io/gh/dssg/architect)
 [![codeclimate](https://codeclimate.com/github/dssg/architect.png)](https://codeclimate.com/github/dssg/architect)
 
+**Note**: Architect is now a bundled component of [Triage](https://github.com/dssg/triage), and future development will take place there. To utilize the Architect within your custom pipeline, you may still import it from there.
+
+---
+
 In order to run classification algorithms on source data, this data must be properly organized into design matrices. Converting cleaned data into these matrices is not a trivial task; the process of creating the needed features and labels for an experiment from source data can be complicated, creating the matrices themselves out of features and labels can be inefficient, and there is opportunity at each step to leak data backwards in time to give model trained on a matrix an unfair advantage.
 
 The Architect addresses these issues with functionality aimed at all tasks between cleaned source data (in a PostgreSQL database) and design matrices.
